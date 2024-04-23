@@ -38,8 +38,31 @@ def window_method_demo():
     present result from a different view and save as png result
     
     """
+
+    
+def window_method_results():
+    """
+    print the results of the window method, save disparity maps as png, scale to 8-bit
+    present result from a different view and save as png result
+    report the evaluation results for all image pairs
+    
+    """
+
     viewpoint_shift = 0.9
     eval_methods = ['avg_abs', 'rms', 'A50', 'A90', 'A95', 'A99', 'bad0.5', 'bad1.0', 'bad2.0']
+    window_sizes = [5, 55, 95, 155, 255]
+    # use a dictionary to store the results of errors:
+    # keys are the evaluation methods and values are the errors
+    # keys also include the scene name and window size
+    error_results = {}
+    for method in eval_methods:
+        error_results[method] = {}
+        for scene_info in Dataset.get_training_scene_list():
+            scene_name = scene_info.scene_name
+            dataset_type = scene_info.dataset_type
+            error_results[method][scene_name] = {}
+            for window_s in [5, 15, 35]:
+                error_results[method][scene_name][window_s] = np.inf
     
     # Get list of scenes in Milddlebury's stereo training dataset and iterate through them
     for scene_info in Dataset.get_training_scene_list():
@@ -55,8 +78,8 @@ def window_method_demo():
         ndisp = scene_data.ndisp # a conservative bound on the number of disparity levels
         # commandline print to show progress
         print(f'Processing {scene_name}')
-        # run window method with window size = 5, 15, 35
-        for window_s in [5, 15, 35]:
+        
+        for window_s in window_sizes:
             print(f'Processing {scene_name} with window size {window_s}')
 
             disparity_map = helper.window_disparity(left_image, right_image, window_size=window_s, min_disparity=0,
@@ -90,19 +113,19 @@ def window_method_demo():
             # evaluate the disparity map and report the results write to file
             for method in eval_methods:
                 error = helper.evaluation_disparity(ground_truth_disp_image, disparity_map, method=method)
+                error_results[method][scene_name][window_s] = error
                 with open(os.path.join(OUTPUT_FOLDER, 'window_method_evaluation_results.txt'), 'a') as f:
                     f.write(f'{scene_name}_{window_s}: {method}: {error}\n')
 
-
-            
-    
-def window_method_results():
-    """
-    print the results of the window method, save disparity maps as png, scale to 8-bit
-    present result from a different view and save as png result
-    report the evaluation results for all image pairs
-    
-    """
+    # perform statistical analysis for the error results:
+    # report the mean and standard deviation of the errors for each evaluation method
+    for method in eval_methods:
+        # calculate mean and standard deviation
+        errors = [error_results[method][scene_name][window_s] for scene_name in Dataset.get_training_scene_list() for window_s in window_sizes]
+        mean_error = np.mean(errors)
+        std_error = np.std(errors)
+        with open(os.path.join(OUTPUT_FOLDER, 'window_method_evaluation_stats.txt'), 'a') as f:
+            f.write(f'{method}: mean error: {mean_error}, std error: {std_error}\n')
     
 def graphcut_method_results():
     """
