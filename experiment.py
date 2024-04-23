@@ -83,7 +83,7 @@ def window_method_results():
             print(f'Processing {scene_name} with window size {window_s}')
 
             disparity_map = helper.window_disparity(left_image, right_image, window_size=window_s, min_disparity=0,
-                                         max_disparity=ndisp-1, consensus_tol=5, normalize=False)
+                                         max_disparity=ndisp, consensus_tol=5, normalize=False)
             # occluded pixels are 0
             
             # normalize the disparity map to 8-bit
@@ -98,12 +98,12 @@ def window_method_results():
             cv2.imwrite(os.path.join(OUTPUT_FOLDER, 
                                      f'disparity_map_window_{scene_name}_{window_s}_norm.png'), 
                                      disparity_map_norm)
-            
-            # present result from a different view and save as png result
-            new_image = helper.present_view(left_image, right_image, disparity_map, viewpoint_shift)
-            # write to png file
-            cv2.imwrite(os.path.join(OUTPUT_FOLDER, 
-                                     f'new_view_window_{scene_name}_{window_s}.png'), new_image)
+            # TODO to make a new experiment to just do a few images
+            # # present result from a different view and save as png result
+            # new_image = helper.present_view(left_image, right_image, disparity_map, viewpoint_shift)
+            # # write to png file
+            # cv2.imwrite(os.path.join(OUTPUT_FOLDER, 
+            #                          f'new_view_window_{scene_name}_{window_s}.png'), new_image)
             """
             cv2.imshow('present view', new_image)
             cv2.waitKey(0)
@@ -140,6 +140,7 @@ if __name__ == "__main__":
     # test()
     
     download_data() # Get list of scenes in Milddlebury's stereo training dataset save to local for next steps
-    window_method_demo() # vary window size and print results
-    # window_method_results() #
+    # window_method_demo() # vary window size and print results
+    window_method_results() #
+    # present_from_another_view_demo()
     # graphcut_method_results() #
