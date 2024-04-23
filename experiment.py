@@ -34,6 +34,7 @@ def window_method_demo():
     present result from a different view and save as png result
     
     """
+    viewpoint_shift = 0.9
     
     # Get list of scenes in Milddlebury's stereo training dataset and iterate through them
     for scene_info in Dataset.get_training_scene_list():
@@ -64,9 +65,19 @@ def window_method_demo():
             cv2.destroyAllWindows()
             
             # save the disparity map as png
-            cv2.imwrite('disparity_map.png', disparity_map)
+            cv2.imwrite(f'disparity_map_window_{scene_name}_{window_s}.png', disparity_map)
             
             # present result from a different view and save as png result
+            new_image = helper.present_view(left_image, right_image, disparity_map, viewpoint_shift)
+            # write to png file
+            cv2.imwrite(f'new_view_window_{scene_name}_{window_s}.png', new_image)
+            
+            # evaluate the disparity map and report the results write to file
+            error = helper.evaluate_disparity_map(ground_truth_disp_image, disparity_map)
+            with open(f'evaluation_results_window_{scene_name}_{window_s}.txt', 'w') as f:
+                f.write(f'Error: {error}')
+                    
+            
     
 def window_method_results():
     """

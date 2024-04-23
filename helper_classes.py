@@ -288,15 +288,30 @@ def calc_diff(ground_truth, disparity):
     return np.subtract(ground_truth_copy - disparity_copy)
     
 
-def present_view(left_image, right_image, disparity_map, view='left'):
+def present_view(left_image, right_image, disparity_map, viewpoint_shift):
     """ present the image from a different view
     
-    
+    Args:
+        viewpoint_shift: float, the factor to adjust the viewpoint; 
+                             values <1.0 shift towards right, >1.0 shift towards left.
+    Returns:
+        new_image: np.array: new image view                             
     """
-    assert view in ['left', 'right'], "view not supported"
+    # Initialize the new image with zeros (black)
+    height, width = left_image.shape[:2]
+    new_image = np.zeros_like(left_image)
     
-    
-    return image_view
+    # Calculate the new x-coordinates for each pixel
+    for y in range(height):
+        for x in range(width):
+            disparity = disparity_map[y, x]
+            new_x = int(x + disparity * viewpoint_shift)
+
+            # Check if the new x-coordinate is within the image bounds
+            if 0 <= new_x < width:
+                new_image[y, new_x] = left_image[y, x]
+                
+    return new_image
     
 # class for graph cut
 # Global constants
@@ -313,8 +328,8 @@ class GCKZ:
     """
     
     def __init__(self, left_image, right_image):
-        self.left_image = left_image
-        self.right_image = right_image
+        self.left_image = left_image.copy().astype(np.float64)
+        self.right_image = right_image.copy().astype(np.float64)
         self.occluded = OCCLUDED # 1<<30
         self.maxIterations = 4
         self.alphaRange = 16
