@@ -14,6 +14,10 @@ from stereomideval.dataset import Dataset # for getting data
 
 DATASET_FOLDER = os.path.join(os.getcwd(),"datasets") #Path to download datasets
 DISPLAY_IMAGES = False
+OUTPUT_FOLDER = os.path.join(os.getcwd(),"output") #Path to save output images
+# make output folder if it does not exist
+if not os.path.exists(OUTPUT_FOLDER):
+    os.makedirs(OUTPUT_FOLDER)
 
 
 def test():
@@ -49,34 +53,44 @@ def window_method_demo():
         right_image = scene_data.right_image
         ground_truth_disp_image = scene_data.disp_image
         ndisp = scene_data.ndisp # a conservative bound on the number of disparity levels
-        
+        # commandline print to show progress
+        print(f'Processing {scene_name}')
         # run window method with window size = 5, 15, 35
         for window_s in [5, 15, 35]:
+            print(f'Processing {scene_name} with window size {window_s}')
+
             disparity_map = helper.window_disparity(left_image, right_image, window_size=window_s, min_disparity=0,
                                          max_disparity=ndisp-1, consensus_tol=5, normalize=False)
+            # occluded pixels are 0
             
-            
-            # replace occluded pixels with 0
-            disparity_map[disparity_map == 1<<30] = 0
             # normalize the disparity map to 8-bit
-            disparity_map = cv2.normalize(disparity_map, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+            disparity_map_norm = cv2.normalize(disparity_map, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
             # plot the disparity map using cv2
-            cv2.imshow('Disparity Map', disparity_map)
+            """
+            cv2.imshow('Disparity Map', disparity_map_norm)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
-            
+            """
             # save the disparity map as png
-            cv2.imwrite(f'disparity_map_window_{scene_name}_{window_s}.png', disparity_map)
+            cv2.imwrite(os.path.join(OUTPUT_FOLDER, 
+                                     f'disparity_map_window_{scene_name}_{window_s}_norm.png'), 
+                                     disparity_map_norm)
             
             # present result from a different view and save as png result
             new_image = helper.present_view(left_image, right_image, disparity_map, viewpoint_shift)
             # write to png file
-            cv2.imwrite(f'new_view_window_{scene_name}_{window_s}.png', new_image)
-            
+            cv2.imwrite(os.path.join(OUTPUT_FOLDER, 
+                                     f'new_view_window_{scene_name}_{window_s}.png'), new_image)
+            """
+            cv2.imshow('present view', new_image)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+            """
+
             # evaluate the disparity map and report the results write to file
             for method in eval_methods:
                 error = helper.evaluation_disparity(ground_truth_disp_image, disparity_map, method=method)
-                with open('window_method_evaluation_results.txt', 'a') as f:
+                with open(os.path.join(OUTPUT_FOLDER, 'window_method_evaluation_results.txt'), 'a') as f:
                     f.write(f'{scene_name}_{window_s}: {method}: {error}\n')
 
 
@@ -104,5 +118,5 @@ if __name__ == "__main__":
     
     download_data() # Get list of scenes in Milddlebury's stereo training dataset save to local for next steps
     window_method_demo() # vary window size and print results
-    window_method_results() #
-    graphcut_method_results() #
+    # window_method_results() #
+    # graphcut_method_results() #

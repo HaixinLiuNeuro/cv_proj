@@ -216,6 +216,10 @@ def window_disparity(left_image_ori, right_image_ori, window_size=5,
     Returns:
         disparity_map (np.array): disparity map            
     """
+    # check and convert min and max disparity to int
+    min_disparity = int(min_disparity)
+    max_disparity = int(max_disparity)
+
     disparity_L2R = SSD_disparity_map(left_image_ori, right_image_ori, window_size, 
                       min_disparity, max_disparity, method='ssd_fast')
     disparity_R2L = SSD_disparity_map(left_image_ori, right_image_ori, window_size, 
@@ -285,7 +289,7 @@ def calc_diff(ground_truth, disparity):
     ground_truth_copy = np.nan_to_num(ground_truth, nan=0.0, posinf=0.0, neginf=0.0)    
     disparity_copy = np.nan_to_num(disparity, nan=0.0, posinf=0.0, neginf=0.0)
     
-    return np.subtract(ground_truth_copy - disparity_copy)
+    return np.subtract(ground_truth_copy, disparity_copy)
     
 
 def present_view(left_image, right_image, disparity_map, viewpoint_shift):
