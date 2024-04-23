@@ -26,7 +26,7 @@ imgR = right_image[y:y+h, :]
 
 # time the graph cut algorithm
 start = cv2.getTickCount()  # start time
-GraphCut = helper.GCKZ(left_image, right_image)
+GraphCut = helper.GCKZ(imgL, imgR)
 disparity_map = GraphCut.compute_disparity_map()
 end = cv2.getTickCount()  # end time
 time = (end - start) / cv2.getTickFrequency()  # time in seconds    
@@ -43,10 +43,13 @@ disparity_map_norm = cv2.applyColorMap(disparity_map_norm, cv2.COLORMAP_PLASMA)
 # replace the occluded pixels with black
 disparity_map_norm[occlusion_mask] = 0, 0, 0  
 # plot the disparity map using cv2
-cv2.imshow('Disparity Map', disparity_map_norm)
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+# cv2.imshow('Disparity Map', disparity_map_norm)
+# cv2.waitKey(0)
+# cv2.destroyAllWindows()
 
 # save the disparity map as png
 cv2.imwrite('disparity_map_norm.png', disparity_map_norm)
+ground_truth_norm = cv2.normalize(ground_truth[y:y+h, :], None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+ground_truth_norm = cv2.applyColorMap(ground_truth_norm, cv2.COLORMAP_PLASMA)
+cv2.imwrite('disparity_map_norm_groundTruth.png', ground_truth_norm)
 
