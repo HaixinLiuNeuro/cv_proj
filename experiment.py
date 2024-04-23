@@ -35,6 +35,7 @@ def window_method_demo():
     
     """
     viewpoint_shift = 0.9
+    eval_methods = ['avg_abs', 'rms', 'A50', 'A90', 'A95', 'A99', 'bad0.5', 'bad1.0', 'bad2.0']
     
     # Get list of scenes in Milddlebury's stereo training dataset and iterate through them
     for scene_info in Dataset.get_training_scene_list():
@@ -73,10 +74,12 @@ def window_method_demo():
             cv2.imwrite(f'new_view_window_{scene_name}_{window_s}.png', new_image)
             
             # evaluate the disparity map and report the results write to file
-            error = helper.evaluate_disparity_map(ground_truth_disp_image, disparity_map)
-            with open(f'evaluation_results_window_{scene_name}_{window_s}.txt', 'w') as f:
-                f.write(f'Error: {error}')
-                    
+            for method in eval_methods:
+                error = helper.evaluation_disparity(ground_truth_disp_image, disparity_map, method=method)
+                with open('window_method_evaluation_results.txt', 'a') as f:
+                    f.write(f'{scene_name}_{window_s}: {method}: {error}\n')
+
+
             
     
 def window_method_results():
