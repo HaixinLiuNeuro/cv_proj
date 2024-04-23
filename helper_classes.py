@@ -677,7 +677,7 @@ class GCKZ:
         # loop
         for i in range(self.maxIterations):
             # loop over all labels
-            for d in range(max_disparity): # np.random.permutation(max_disparity):?
+            for d in np.random.permutation(max_disparity): # ? range(max_disparity): # 
                 if not done[d]:
                     self.activePenalty = 0 # initialize active penalty
                     # construct a graph for each
