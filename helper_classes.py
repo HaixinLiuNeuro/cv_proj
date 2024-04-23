@@ -9,8 +9,9 @@ from stereomideval.dataset import Dataset # for getting data
 # for graph cut
 import maxflow 
 import multiprocessing as mp # parallel processing
-import heapq # for heap queue
-
+# import heapq # for heap queue
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 
 def download_dataset(dataset_folder):
@@ -292,8 +293,59 @@ def calc_diff(ground_truth, disparity):
     return np.subtract(ground_truth_copy, disparity_copy)
     
 
-def present_view(left_image, right_image, disparity_map, viewpoint_shift):
-    """ present the image from a different view
+
+def plot_3D_image(image, disparity_map, filename, elev=100, azim=100):
+    """ Plot a 3D image using a disparity map and save it to a file.
+    
+    Args:
+        image: np.array, the image to plot, use color orginal image
+        disparity_map: np.array, the disparity map providing depth information
+        filename: str, the name of the file to save the plot to
+        elev: int, the elevation angle (in degrees)
+        azim: int, the azimuth angle (in degrees)
+    """
+    # Create a grid of x, y coordinates
+    y = np.arange(image.shape[0])
+    x = np.arange(image.shape[1])
+    X, Y = np.meshgrid(x, y)
+
+    # Use the disparity map as the depth (z) information
+    Z = disparity_map[Y, X]
+
+    if len(image.shape) == 2:
+        image_rgb = plt.cm.viridis(image)
+    else:
+        image_rgb = image
+    # Normalize the image to the range 0-1
+    image_rgb = image_rgb / 255.0
+    
+    # Create a 3D plot
+    fig = plt.figure(figsize=(10, 10))
+    ax = fig.add_subplot(111, projection='3d')
+    ax.plot_surface(X, Y, Z, facecolors=image_rgb)
+    # ax.plot_surface(X, Y, Z)
+    # Set the viewing angle
+    ax.view_init(elev, azim)
+    
+    # Set the axes labels
+    # ax.set_xlabel('X')
+    # ax.set_ylabel('Y')
+    # ax.set_zlabel('Z')
+    # remove grid
+    ax.grid(False)
+    # remove axis
+    ax.axis('off')
+    # reverse x axis direction
+    ax.set_xlim(ax.get_xlim()[::-1])
+    # plt.show()
+    # Save the plot to a file
+    plt.savefig(filename)
+    plt.close(fig)
+
+    
+    
+def present_view(left_image, occlusion_mask, disparity_map, viewpoint_shift):
+    """ present the image from a different view on the baseline
     
     Args:
         viewpoint_shift: float, the factor to adjust the viewpoint; 
@@ -316,6 +368,108 @@ def present_view(left_image, right_image, disparity_map, viewpoint_shift):
                 new_image[y, new_x] = left_image[y, x]
                 
     return new_image
+
+def synthesize_view(left_image, right_image, depth_map, new_camera_parameters):
+    """
+    NOT IMPLEMENTED YET
+    """
+    raise NotImplementedError('This function is not implemented yet')
+    # # Initialize the new image with zeros (black)
+    # new_image = np.zeros_like(left_image)
+    
+    # # For each pixel in the new image
+    # for y in range(new_image.shape[0]):
+    #     for x in range(new_image.shape[1]):
+    #         # Calculate the corresponding 3D point in the world
+    #         depth = depth_map[y, x]
+    #         world_point = calculate_world_point(x, y, depth, new_camera_parameters)
+            
+    #         # Project this 3D point onto the original images
+    #         left_x, left_y = project_onto_image(world_point, left_camera_parameters)
+    #         right_x, right_y = project_onto_image(world_point, right_camera_parameters)
+            
+    #         # Use the pixel values from the original images to determine the pixel value in the new image
+    #         new_image[y, x] = interpolate_pixel_value(left_image, right_image, left_x, left_y, right_x, right_y)
+            
+    return new_image
+
+def estimate_Bf(disparities):
+    """ Estimate B*f using least squares.
+    
+    Args:
+        disparities: np.array, disparity map flattened and removing occluded pixels
+    Returns:
+        Bf: float, estimated value of B*f
+    """
+    # create an array of corresponding 1/depth values    
+    depths = 1 / disparities
+
+    # Fit a line to the data
+    A = np.vstack([depths, np.ones(len(depths))]).T
+    Bf, _ = np.linalg.lstsq(A, disparities, rcond=None)[0]
+
+    return Bf
+
+def calc_depth_map(disparity_map, Bf):
+    """ Calculate the depth map from the disparity map using a constant B*f.
+    
+    Args:
+        disparity_map: np.array, disparity map
+        Bf: float, assumed value of B*f
+    Returns:
+        depth_map: np.array, depth map
+    """
+    # Avoid division by zero
+    disparity_map[disparity_map == 0] = 0.01
+    
+    depth_map = Bf / disparity_map
+    
+    return depth_map
+    
+
+def calculate_world_point(x, y, depth, camera_parameters):
+    """ Calculate the corresponding 3D point in the world given the pixel coordinates, depth, and camera parameters.
+    
+    Args:
+        x: int, x-coordinate of the pixel
+        y: int, y-coordinate of the pixel
+        depth: float, depth value at the pixel
+        camera_parameters: dict, camera parameters including focal length (f), and principal point (cx, cy)
+    Returns:
+        world_point: np.array, 3D point in the world
+    """
+    f = camera_parameters['f']
+    cx = camera_parameters['cx']
+    cy = camera_parameters['cy']
+    
+    X = (x - cx) * depth / f
+    Y = (y - cy) * depth / f
+    Z = depth
+    
+    world_point = np.array([X, Y, Z])
+    
+    return world_point
+
+def project_onto_image(world_point, camera_parameters):
+    """ Project a 3D world point onto an image given the camera parameters.
+    
+    Args:
+        world_point: np.array, 3D point in the world
+        camera_parameters: dict, camera parameters including focal length (f), and principal point (cx, cy)
+    Returns:
+        x: int, x-coordinate of the projected point on the image
+        y: int, y-coordinate of the projected point on the image
+    """
+    f = camera_parameters['f']
+    cx = camera_parameters['cx']
+    cy = camera_parameters['cy']
+    
+    X, Y, Z = world_point
+    
+    x = int(f * X / Z + cx)
+    y = int(f * Y / Z + cy)
+    
+    return x, y    
     
 # class for graph cut
 # Global constants
