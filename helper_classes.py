@@ -728,7 +728,7 @@ class GCKZ:
             return var;
             }
             """    
-            ### previous likely wrong
+            ### previous 
             """
             # d_f(p) = alpha, noncluded, p+alpha in right image
             if disp == d and not is_occluded and is_in_right_image:
