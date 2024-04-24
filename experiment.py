@@ -134,7 +134,38 @@ def window_method_results():
             std_error = np.nanstd(errors)
             with open(os.path.join(OUTPUT_FOLDER, 'window_method_evaluation_stats.txt'), 'a') as f:
                 f.write(f'{method}_{window_s}: mean error: {mean_error}, std error: {std_error}\n')
+
+def present_from_another_view_demo():
+    """
+    Experiment to present the disparity map from a different view depth 3D plot
     
+    """
+
+    tsukubaImageFd = os.path.join(DATASET_FOLDER, "tsukuba")
+
+    left_image = cv2.imread(os.path.join(tsukubaImageFd, "imL.png"), cv2.IMREAD_GRAYSCALE)
+    right_image = cv2.imread(os.path.join(tsukubaImageFd, "imR.png"), cv2.IMREAD_GRAYSCALE)
+    ground_truth = cv2.imread(os.path.join(tsukubaImageFd, "groundtruth.png"), cv2.IMREAD_GRAYSCALE)
+    left_original = cv2.imread(os.path.join(tsukubaImageFd, "imL.png"), cv2.IMREAD_COLOR)
+    helper.plot_3D_image(left_original, ground_truth, f'new_view_window_test_gt.png')
+
+    # compute disparity using window method\
+    window_s = 15
+    # max disparity to 16 multiples from ground_truth
+    ndisp = 16 # * math.ceil(np.max(ground_truth) / 16)
+    disparity_map = helper.window_disparity(left_image, right_image, window_size=window_s, min_disparity=0,
+                                            max_disparity=ndisp, consensus_tol=5, normalize=False)
+
+    # simple method to shift camera position on the baseline
+    # viewpoint_shift = 0.9 # values <1.0 shift towards right, >1.0 shift towards left.
+    # new_image = helper.present_view(left_image, right_image, disparity_map, viewpoint_shift)
+    # # write to png file
+    # cv2.imwrite((f'new_view_window_test.png'), new_image)
+
+    helper.plot_3D_image(left_original, disparity_map, f'new_view_window_test.png')
+
+    print("done")
+
 def graphcut_method_results():
     """
     print the results of the graphcut method, save disparity maps as png, scale to 8-bit
@@ -199,6 +230,6 @@ if __name__ == "__main__":
     # download_data() # Get list of scenes in Milddlebury's stereo training dataset save to local for next steps
     # window_method_demo() # vary window size and print results
     # window_method_results() # Done
-    # present_from_another_view_demo()
-    graphcut_method_demo() 
+    present_from_another_view_demo()
+    # graphcut_method_demo() 
     # graphcut_method_results() #
