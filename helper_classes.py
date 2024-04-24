@@ -473,8 +473,8 @@ def project_onto_image(world_point, camera_parameters):
     
 # class for graph cut
 # Global constants
-VAR_ALPHA = -1 # disparity alpha before expansion move in vars0 and varsA
-VAR_ABSENT = -2 # means occlusion in vars0, and p+alpha ouside image in varsA
+VAR_ALPHA = -1
+VAR_ABSENT = -2
 CUTOFF = 30
 OCCLUDED = 1<<30
 
@@ -485,12 +485,12 @@ class GCKZ:
     
     """
     
-    def __init__(self, left_image, right_image, maxIterations=5, alphaRange=16):
+    def __init__(self, left_image, right_image):
         self.left_image = left_image.copy().astype(np.float64)
         self.right_image = right_image.copy().astype(np.float64)
         self.occluded = OCCLUDED # 1<<30
-        self.maxIterations = maxIterations
-        self.alphaRange = alphaRange
+        self.maxIterations = 4
+        self.alphaRange = 16
         # self.left_image_min, self.left_image_max = self.subPixel(self.left_image)
         # self.right_image_min, self.right_image_max = self.subPixel(self.right_image)
         # get I max and I min defined in the paper (BT dissimilarity measure)
@@ -498,24 +498,15 @@ class GCKZ:
         self.right_image_min, self.right_image_max = self.i_maxmin(self.right_image)
         
         # auto calculate K, lambda1, lambda2, denominator as per the paper
-        debug = True # set to True to print the parameters
-        if debug:
-            # self.K, self.lambda1, self.lambda2, self.denominator = 400, 45, 15, 15
-            self.K, self.lambda1, self.lambda2, self.denominator = 95, 57, 19, 4
-            #         K=95/4
-            #   edgeThreshold=8, lambda1=57/4, lambda2=19/4, dataCost = L2
-        else: 
-            self.K, self.lambda1, self.lambda2, self.denominator = self.setupParameters()
-        # print
-        print(f"K: {self.K}, lambda1: {self.lambda1}, lambda2: {self.lambda2}, denominator: {self.denominator}")
+        self.K, self.lambda1, self.lambda2, self.denominator = self.setupParameters()
+        
         # initialize energy and disparity map
         self.energy = 0
         self.disparity_map = np.full((self.left_image.shape), self.occluded, dtype=np.int64)
-        # self.disparity_map = np.full((self.left_image.shape), 0, dtype=np.int64)
         
-        # to track modes of associated pixels, node id starts from 0
-        self.vars0 = np.full((self.left_image.shape), -10, dtype=np.int64)
-        self.varsA = np.full((self.left_image.shape), -10, dtype=np.int64)
+        # to track modes of associated pixels
+        self.vars0 = np.zeros((self.left_image.shape), dtype=np.int64)
+        self.varsA = np.zeros((self.left_image.shape), dtype=np.int64)
         
         self.activePenalty = 0
         
@@ -583,7 +574,7 @@ class GCKZ:
         
         disBT_trim = np.min(np.array([CUTOFF, disBT_l2r, disBT_r2l]))
         
-        return disBT_trim ** 2       
+        return disBT_trim        
             
     def setupParameters(self):
         """
@@ -600,7 +591,7 @@ class GCKZ:
         for row, col in np.ndindex(self.left_image.shape[0], self.left_image.shape[1] - self.alphaRange):
             tmp_distance = np.empty(self.alphaRange+1)
             for d in range(0, self.alphaRange+1):
-                disBT_l2r, disBT_r2l = self.disBT((row, col), (row, col - d))
+                disBT_l2r, disBT_r2l = self.disBT((row, col), (row, col + d))
                 tmp_distance[d] = self.trim_disBT(disBT_l2r, disBT_r2l)
             kth_smallest = np.partition(tmp_distance, k-1)[k-1]
             sum_kth_smallest += kth_smallest
@@ -631,25 +622,13 @@ class GCKZ:
         """
         use the disparity label (d) to update the disparity map attribute
         
-        
         """
         
         vectorized_get_segment = np.vectorize(g.get_segment)
         
-        # nonvariable nodes keep their initial state: f*(assignment) = f(assignment)
-        # if varA[p]=vars0[p]=VAR_ALPHA, 
-        # then the assignment = (p, p+alpha) remains active
-        
-        # a ssignments not in A_alpha U A_0 remain inactive
-        
-        # get_var returns the value g_alpha(a) of a binary variable 
-        # if the nodes varsA(p) and/or vars0(p) associated to the pixel p are variable, then,
-        #   if get_var(vars0[p]) = 1, then the assignment p, p+d_f(p) becomes inactive ? occluded
-        #   if get_var(varsA[p]) = 1, then the assignment p, p+alpha becomes active
-        
         # vars0 
-        if self.vars0[self.vars0 >= 0].size > 0: # 0 is initial, > 1 is with nodes as node id
-            mask = np.zeros(self.vars0.shape, dtype=bool) # for added nodes 
+        if self.vars0[self.vars0 >= 0].size > 0:
+            mask = np.zeros(self.vars0.shape, dtype=bool)
             mask[self.vars0 >= 0] = vectorized_get_segment(self.vars0[self.vars0 >= 0])
             self.disparity_map[mask] = OCCLUDED
             
@@ -662,77 +641,12 @@ class GCKZ:
     def add_data_occu_terms(self, g, d):
         """
         add occlusion terms to the graph
-        d is label or alpha
-        disp is d_f(p)
-        Note:
-        a_ is an identifier of a node concerning p created on demand 
-        and corresponding to a binary variable g_alpha
-        varsA(p) = a_ means that the node a associated to 
-            the assignment (p, p+alpha) has to be added;
-        varso(p) = o_ means that the node o associated to 
-            the assignment (p, p+d_f(p)) has to be added;
-        a function IS_VAR -> check if a node a_ or o_ points to a node of 
-            the graph or not: as note ID >= 0
         
         """ 
         for p, disp in np.ndenumerate(self.disparity_map):
             # disp = self.disparity_map[p]
-            # q = p+d_f(p)
-            is_in_right_image = p[1] + d < self.left_image.shape[1] and p[1] + d >= 0
-            is_occluded = disp == self.occluded
             
-            if disp == d:
-                # active assignment, assignment remains active, add constaint cost 
-                self.vars0[p] = VAR_ALPHA
-                self.varsA[p] = VAR_ALPHA
-                # get distance and penalty
-                q = (p[0], p[1] + d)
-                disBT_l2r, disBT_r2l = self.disBT(p, q)
-                disBT_trim = self.trim_disBT(disBT_l2r, disBT_r2l)
-                penalty = self.denominator * disBT_trim - self.K
-                # add constant
-                self.activePenalty += penalty # accumulate active penalty
-                continue
-            
-            if not is_occluded:
-                # IMREF(vars0, p) = (d!=OCCLUDED)?  
-                # e.add_variable(data_occlusion_penalty(p,q), 0): VAR_ABSENT;                
-                q = (p[0], p[1] + disp)
-                disBT_l2r, disBT_r2l = self.disBT(p, q)
-                disBT_trim = self.trim_disBT(disBT_l2r, disBT_r2l)
-                penalty = self.denominator * disBT_trim - self.K
-                node_id = g.add_nodes(1)[0]
-                g.add_tedge(node_id, penalty, 0)
-                self.vars0[p] = node_id # a_
-            else:
-                self.vars0[p] = VAR_ABSENT
-                
-            q = (p[0], p[1] + d) # q = p+alpha    
-            is_in_right_image = q[1] < self.left_image.shape[1] and q[1] >= 0 # also update
-            if is_in_right_image:
-                # IMREF(varsA, p) = inRect(q,imSizeR)? 
-                # e.add_variable(0, data_occlusion_penalty(p,q)): VAR_ABSENT;
-                disBT_l2r, disBT_r2l = self.disBT(p, q)
-                disBT_trim = self.trim_disBT(disBT_l2r, disBT_r2l)
-                penalty = self.denominator * disBT_trim - self.K
-                node_id = g.add_nodes(1)[0]
-                g.add_tedge(node_id, 0, penalty)
-                self.varsA[p] = node_id # a_
-            else:
-                self.varsA[p] = VAR_ABSENT
-                
-            """
-            inline Energy::Var Energy::add_variable(Value E0, Value E1) {
-            Energy::Var var = add_node();
-            add_term1(var, E0, E1);
-            return var;
-            }
-            """    
-            ### previous likely wrong
-            """
-            # d_f(p) = alpha, noncluded, p+alpha in right image
-            if disp == d and not is_occluded and is_in_right_image:
-                # acctive assignment, assignment remains active, add constaint cost 
+            if disp == d: # acctive assignment
                 self.vars0[p] = VAR_ALPHA
                 self.varsA[p] = VAR_ALPHA                
                 # get distance and penalty
@@ -742,67 +656,31 @@ class GCKZ:
                 penalty = self.denominator * disBT_trim - self.K
                 self.activePenalty += penalty # accumulate active penalty
                 # no new node
-            elif disp == d and not is_occluded and not is_in_right_image:
-                # impossible pass
-                # doing nothing
-                pass
-            elif not is_occluded and disp != d and is_in_right_image:
-                # add two nodes 
-                # self.varsA(p) = # a_
-                # add term1(a,0,D'(a))
-                # varsA(p)=a means that the node a associated to the assignment (p; p + alpha) has to be added;
-                q = (p[0], p[1] + d) # y, x + disp ?
-                disBT_l2r, disBT_r2l = self.disBT(p, q)
-                disBT_trim = self.trim_disBT(disBT_l2r, disBT_r2l)
-                penalty = self.denominator * disBT_trim - self.K
-                node_id = g.add_nodes(1)[0]
-                g.add_tedge(node_id, 0, penalty)
-                self.varsA[p] = node_id # a_
+            else: # inactive
+                # vars0
+                if disp != self.occluded: # not occluded, add node and edge to sink
+                    q = (p[0], p[1] + disp) # y, x + disp
+                    disBT_l2r, disBT_r2l = self.disBT(p, q)
+                    disBT_trim = self.trim_disBT(disBT_l2r, disBT_r2l)
+                    penalty = self.denominator * disBT_trim - self.K
+                    node_id = g.add_nodes(1)[0]
+                    g.add_tedge(node_id, 0, penalty)
+                    self.vars0[p] = node_id # cache node id to pixel position
+                else: # occluded
+                    self.vars0[p] = VAR_ABSENT
                 
-                # self.vars0[p] = # vars0[p]=o
-                # o associated to the assignment (p; p+df [p]) has to be added
-                q = (p[0], p[1] + disp) # y, x + disp ?
-                disBT_l2r, disBT_r2l = self.disBT(p, q)
-                disBT_trim = self.trim_disBT(disBT_l2r, disBT_r2l)
-                penalty = self.denominator * disBT_trim - self.K
-                node_id = g.add_nodes(1)[0]
-                g.add_tedge(node_id, penalty, 0)
-                self.vars0[p] = node_id # vars0[p]=o
-                
-            elif not is_occluded and disp != d and not is_in_right_image:
-                # add notes
-                # varsA[p]=VAR ABSENT
-                # vars0[p]=o_
-                self.varsA[p] = VAR_ABSENT
-                
-                q = (p[0], p[1] + disp) # y, x + disp ?
-                disBT_l2r, disBT_r2l = self.disBT(p, q)
-                disBT_trim = self.trim_disBT(disBT_l2r, disBT_r2l)
-                penalty = self.denominator * disBT_trim - self.K
-                node_id = g.add_nodes(1)[0]
-                g.add_tedge(node_id, penalty, 0)
-                self.vars0[p] = node_id # o_
-                
-            elif is_occluded and is_in_right_image:                
-                self.vars0[p] = VAR_ABSENT
-                
-                q = (p[0], p[1] + d) # y, x + disp ?
-                disBT_l2r, disBT_r2l = self.disBT(p, q)
-                disBT_trim = self.trim_disBT(disBT_l2r, disBT_r2l)
-                penalty = self.denominator * disBT_trim - self.K
-                node_id = g.add_nodes(1)[0]
-                g.add_tedge(node_id, 0, penalty)
-                self.varsA[p] = node_id # a_                
-                
-            elif is_occluded and not is_in_right_image:
-                
-                self.vars0[p] = VAR_ABSENT
-                self.varsA[p] = VAR_ABSENT
-            
-            else:
-                # doing nothing
-                pass    
-            """
+                # varsA new assignment
+                q = (p[0], p[1] + d)
+                # check if q is within the image
+                if q[1] < self.left_image.shape[1]: # within the image
+                    disBT_l2r, disBT_r2l = self.disBT(p, q)
+                    disBT_l2r = self.trim_disBT(disBT_l2r, disBT_r2l)
+                    penalty = self.denominator * disBT_l2r - self.K
+                    node_id = g.add_nodes(1)[0]
+                    g.add_tedge(node_id, penalty, 0)
+                    self.varsA[p] = node_id                    
+                else: # outside the image
+                    self.varsA[p] = VAR_ABSENT        
         
     def add_smooth_terms(self, g, d):
         """
@@ -811,111 +689,86 @@ class GCKZ:
         
         
         """
-        alpha = d
-        
         for p1, _ in np.ndenumerate(self.disparity_map):
             # disp = self.disparity_map[p]            
         
             for i in range(2):
                 # q2 = (q[0] + i, q[1] + i - 1)
                 p2 = (p1[0] + i, p1[1] + i - 1)
-                is_p2_in_image = p2[1] < self.left_image.shape[1] and \
-                    p2[0] < self.left_image.shape[0] and p2[0] >= 0 and p2[1] >= 0
-                if not is_p2_in_image:
-                    continue  
                 
-                d_f_p1 = self.disparity_map[p1]
-                d_f_p2 = self.disparity_map[p2]
+                if p2[1] < self.left_image.shape[1] and p2[0] < self.left_image.shape[0] and \
+                    p2[0] >= 0 and p2[1] >= 0: # valid p2
                 
-                varsA1 = self.varsA[p1]
-                varsA2 = self.varsA[p2]
-                
-                vars01 = self.vars0[p1]
-                vars02 = self.vars0[p2]
-                
-                                  
+                    d_f_p1 = self.disparity_map[p1]
+                    d_f_p2 = self.disparity_map[p2]
                     
-                # if disp1 = disp2, 
-                #   if both active then, Esmooth = 0  (self.vars0[p] >= 0 and self.vars0[p2] >= 0)
-                #   if both inactive then, Esmooth = 0 (self.vars0[p] < 0 and self.vars0[p2] < 0)
+                    alpha = d
                     
-                # 1: a1, a2 A_alpha\f
-                # a1 = (p1, p1 + alpha) and a2 = (p2, p2 + alpha), 
-                # a1 is variable, a2 is variable
-                # varsA(p1) = a1, varsA(p2) = a2
-                # add pairwise assignment a1, a2, 0, weight, weight, 0
-                
-                ## disparity alpha
-                if varsA1 != VAR_ABSENT and varsA2 != VAR_ABSENT:
-                # varsA1 != VAR_ALPHA and varsA1 != VAR_ABSENT and varsA2 != VAR_ALPHA  and vars02 != VAR_ABSENT:
-                    weight = self.dist_dispairty(p1, p2, alpha)
-                    if varsA1 != VAR_ALPHA: # p1 p1+alpha is variable
-                        if varsA2 != VAR_ALPHA: # penalize different activity
-                            self.add_edge_pairwise(g, varsA1, varsA2, 0, weight, weight, 0)
-                        else: # penalize p1, p1+alpha inactive
-                            g.add_tedge(varsA1, weight, 0)
-                            # 2: a1 A_alpha\f, a2 A_alpha A(f)
-                            # a1 = (p1, p1 + alpha) and a2 = (p2, p2 + alpha),
-                            # a1 is variable, a2 remains active                                
-                            # varsA(p1) = a1, varsA(p2) = VAR_ALPHA
-                            # add tedge a1, weight, 0
-                            # if varsA1 >= 0 and varsA2 == VAR_ALPHA:
-                            #     weight = self.dist_dispairty(p1, p2, (p1[0], p1[1] + alpha), (p2[0], p2[1] + alpha))
-                            #     # add terminal edge
-                            #     g.add_tedge(varsA1, weight, 0)
-                    elif varsA2 != VAR_ALPHA: # p1, p1+alpha inactive, p2, p2+alpha active
-                        g.add_tedge(varsA2, weight, 0)
-                
-                # disparity d==nd!=alpha
-                if d_f_p1 == d_f_p2 and vars01 >= 0 and vars02 >= 0: # is_var = '>=0' variable, as a note
-                    # and IS_VAR(vars0[p1]) and IS_VAR(vars0[p2]) -> TODO check
-                    assert d_f_p1 != alpha and d_f_p1 != self.occluded, "Assertion error: d_f_p1 should not be equal to alpha or occluded"
-                    weight = self.dist_dispairty(p1, p2, d_f_p1)
-                    self.add_edge_pairwise(g, vars01, vars02, 0, weight, weight, 0)                    
+                    varsA_a1 = self.varsA[p1]
+                    varsA_a2 = self.varsA[p2]
+                    
+                    vars0_a1 = self.vars0[p1]
+                    vars0_a2 = self.vars0[p2]
+                    
+                    
+                    
+                    
+                    # if disp1 = disp2, 
+                    #   if both active then, Esmooth = 0  (self.vars0[p] >= 0 and self.vars0[p2] >= 0)
+                    #   if both inactive then, Esmooth = 0 (self.vars0[p] < 0 and self.vars0[p2] < 0)
+                    
+                    # 1: a1, a2 A_alpha\f
+                    # a1 = (p1, p1 + alpha) and a2 = (p2, p2 + alpha), 
+                    # a1 is variable, a2 is variable
+                    # varsA(p1) = a1, varsA(p2) = a2
+                    # add pairwise assignment a1, a2, 0, weight, weight, 0
+                    if varsA_a1 >= 0 and varsA_a2 >= 0 and \
+                        p2[1]+alpha < self.left_image.shape[1] and p1[1]+alpha < self.left_image.shape[1]:
+                    # varsA_a1 != VAR_ALPHA and varsA_a1 != VAR_ABSENT and varsA_a2 != VAR_ALPHA  and vars0_a2 != VAR_ABSENT:
+                        weight = self.dist_dispairty(p1, p2, (p1[0], p1[1] + alpha), (p2[0], p2[1] + alpha))
+                        self.add_edge_pairwise(g, varsA_a1, varsA_a2, 0, weight, weight, 0)
+                    
+                    # 2: a1 A_alpha\f, a2 A_alpha A(f)
+                    # a1 = (p1, p1 + alpha) and a2 = (p2, p2 + alpha),
+                    # a1 is variable, a2 remains active                                
+                    # varsA(p1) = a1, varsA(p2) = VAR_ALPHA
+                    # add tedge a1, weight, 0
+                    if varsA_a1 >= 0 and varsA_a2 == VAR_ALPHA:
+                        weight = self.dist_dispairty(p1, p2, (p1[0], p1[1] + alpha), (p2[0], p2[1] + alpha))
+                        # add terminal edge
+                        g.add_tedge(varsA_a1, weight, 0)
+                            
+                    
                     # 3: a1 A_O, a2 A_O
                     # a1 = (p1, p1 + d) and a2 = (p2, p2 + d),  d = d_f(p1) = d_f(p2)
                     # a1 is variable and a2 is variable
                     # vars0(p1) = o1, vars0(p2) = o2
                     # add pairwise assignment o1, o2, 0, weight, weight, 0
-                    # if d_f_p1 == d_f_p2 and vars01 >= 0 and vars02 >= 0 and \
-                    #     p2[1] + d_f_p1 < self.left_image.shape[1] and p1[1] + d_f_p1 < self.left_image.shape[1]:
-                    #     weight = self.dist_dispairty(p1, p2, (p1[0], p1[1] + d_f_p1), (p2[0], p2[1] + d_f_p1))
-                    #     self.add_edge_pairwise(g, vars01, vars02, 0, weight, weight, 0)
-                
-                # disparity d1, a!=d1!=d2, (p2, p2+d1) inactive neighbor assignment
-                # (d1!=d2 && IS_VAR(o1) && inRect(p2+d1,imSizeR))
-                if d_f_p1 != d_f_p2 and vars01 >= 0 and \
-                    p2[1] + d_f_p1 < self.left_image.shape[1] and p1[1] + d_f_p1 < self.left_image.shape[1]:                    
-                    weight = self.dist_dispairty(p1, p2, d_f_p1)
-                    g.add_tedge(vars01, weight, 0)
-
-                # disparity d2, a!=d2!=d1, (p1,p1+d2) inactive neighbor assignment     
-                # (d2!=d1 && IS_VAR(o2) && inRect(p1+d2,imSizeR))                   
-                if d_f_p1 != d_f_p2 and vars02 >= 0 and \
-                    p1[1] + d_f_p2 < self.left_image.shape[1]:
-                    weight = self.dist_dispairty(p1, p2, d_f_p2)
-                    g.add_tedge(vars02, weight, 0)    
-                        
-                # 4: a1 A_O, a2 A \ A_O
-                # a1 = (p1, p1 + d) and a2 = (p2, p2 + d),  d = d_f(p1) != d_f(p2)
-                # a1 is variable and a2 remains inactive
-                # vars0(p1) = o1, d_left(p1) != d_left(p2), p2+d_left(p1) belongs to the rigth image
-                # add tedge o1, weight, 0
+                    if d_f_p1 == d_f_p2 and vars0_a1 >= 0 and vars0_a2 >= 0 and \
+                        p2[1] + d < self.left_image.shape[1] and p1[1] + d < self.left_image.shape[1]:
+                        weight = self.dist_dispairty(p1, p2, (p1[0], p1[1] + d), (p2[0], p2[1] + d))
+                        self.add_edge_pairwise(g, vars0_a1, vars0_a2, 0, weight, weight, 0)
                     
+                    
+                    # 4: a1 A_O, a2 A \ A_O
+                    # a1 = (p1, p1 + d) and a2 = (p2, p2 + d),  d = d_f(p1) != d_f(p2)
+                    # a1 is variable and a2 remains inactive
+                    # vars0(p1) = o1, d_left(p1) != d_left(p2), p2+d_left(p1) belongs to the rigth image
+                    # add tedge o1, weight, 0
+                    if d_f_p1 != d_f_p2 and vars0_a1 >= 0 and vars0_a2 == VAR_ABSENT and \
+                        p2[1] + d < self.left_image.shape[1] and p1[1] + d < self.left_image.shape[1]:
+                        weight = self.dist_dispairty(p1, p2, (p1[0], p1[1] + d), (p2[0], p2[1] + d))
+                        g.add_tedge(vars0_a1, weight, 0)
                 
-    def dist_dispairty(self, p1, p2, alpha):
+    def dist_dispairty(self, p1, p2, q1, q2):
         """
         Calculate smoothness term's weight
         Args:
-            p1 (tuple): pixel p1
-            p2 (tuple): pixel p2
-            alpha (int): disparity alpha
         
         Returns:
             weight (float): smoothness term's weight
         """
-        q1 = (p1[0], p1[1] + alpha)
-        q2 = (p2[0], p2[1] + alpha)
+        
         intensity_absdiff_I1 = np.abs(self.left_image[p1] - self.left_image[p2])
         intensity_absdiff_I2 = np.abs(self.right_image[q1] - self.right_image[q2])
         
@@ -930,33 +783,20 @@ class GCKZ:
         add unique terms to the graph
         
         """
-        alpha = d
-        
         for p, disp in np.ndenumerate(self.disparity_map):
             # disp = self.disparity_map[p]
-            # q = (p[0], p[1] + disp)
+            q = (p[0], p[1] + disp)
             
-            var0 = self.vars0[p]
-            if var0 < 0: # !is_var
-                continue
-            
-            varA = self.varsA[p] # retrive the node id
-            # unique image of p    
-            if varA != VAR_ABSENT:
-                # add forbidden edge
-                self.add_edge_forbid01(g, var0, varA, OCCLUDED)
-            
-            # Enforce unique antecedent of p+d_f(p) 
-            # assert(d!=OCCLUDED);
-            assert disp != OCCLUDED, "Assertion error: disp should not be equal to OCCLUDED"
-            p2 = (p[0], p[1] + disp - alpha)
-            if p2[1] < self.left_image.shape[1] and p2[1] >= 0:
-                # inRect(p2,imSizeL)
-                varA = self.varsA[p2]
-                assert varA >= 0, "Assertion error: varA should not be a node"
-                # not active because of current uniqueness
-                # add forbidden edge
-                self.add_edge_forbid01(g, var0, varA, OCCLUDED)
+            if self.vars0[p] >= 0: # not absent
+                var_A = self.varsA[p] # retrive the node id
+                if var_A != VAR_ABSENT:
+                    # add forbidden edge
+                    self.add_edge_forbid01(g, self.vars0[p], var_A, OCCLUDED)
+                p2 = (p[0], p[1] + disp - d)
+                if p2[1] < self.left_image.shape[1] and p2[1] >= 0:
+                    var_A = self.varsA[p2]
+                    # add forbidden edge
+                    self.add_edge_forbid01(g, self.vars0[p], var_A, OCCLUDED)
                     
     def add_edge_forbid01(self, g, n1, n2, OCCLUDED):
         """
@@ -970,8 +810,8 @@ class GCKZ:
         add pairwise edge between two nodes
         
         """
-        g.add_edge(n1, n2, 0, E01+E10-(E00+E11)) # 0, w3-w4-w0, w0=w1-w2 = E10-E11-E00+E01
-        g.add_tedge(n1, E11, E01) # w4, w2
+        g.add_edge(n1, n2, 0, (E01+E10)-(E00+E11))
+        g.add_tedge(n1, E11, E01)
         g.add_tedge(n2, 0, E00 - E01)
                         
         
@@ -995,7 +835,6 @@ class GCKZ:
         # loop
         for i in range(self.maxIterations):
             # loop over all labels
-            print(f"iteration: {i}")
             for d in np.random.permutation(max_disparity): # ? range(max_disparity): # 
                 if not done[d]:
                     self.activePenalty = 0 # initialize active penalty
@@ -1003,25 +842,22 @@ class GCKZ:
                     g = maxflow.Graph[int](2 * self.left_image.size, 12 * self.left_image.size) 
                     # each pixel has two nodes and 12 edges
                     
-                    self.add_data_occu_terms(g, -d)
-                    self.add_smooth_terms(g, -d)
-                    self.add_unique_terms(g, -d)
+                    self.add_data_occu_terms(g, d)
+                    self.add_smooth_terms(g, d)
+                    self.add_unique_terms(g, d)
                     
                     new_energy = g.maxflow() + self.activePenalty
-                    print(f"disparity: {-d}; new energy: {new_energy}; active penalty: {self.activePenalty}")
+                    
                     if new_energy < self.energy:
                         self.energy = new_energy
                         # update disparity map
-                        print(f"new energy: {new_energy}; update disparity map: {-d}")
-                        self.update_disparity_map(g, -d)
+                        self.update_disparity_map(g, d)
                         done[:] = False # reset
-                        print(f"reset")
                     done[d] = True
                     
-            # exit
-            if np.all(done):
-                print(f"all done")
-                return self.disparity_map
+                    # exit
+                    if np.all(done):
+                        return self.disparity_map
         # finished loops        
         return self.disparity_map
     

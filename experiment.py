@@ -142,55 +142,6 @@ def graphcut_method_results():
     report the evaluation results for all image pairs
     
     """    
-def graphcut_method_demo():
-    """
-    print the results of the graphcut method, save disparity maps as png, scale to 8-bit
-    present result from a different view and save as png result
-    report the evaluation results for all image pairs
-    
-    """    
-    print('Running: graphcut_method_demo')
-    tsukubaImageFd = os.path.join(os.getcwd(),"datasets", "Tsukuba")
-
-    left_image = cv2.imread(os.path.join(tsukubaImageFd, "imL.png"), cv2.IMREAD_GRAYSCALE)
-    right_image = cv2.imread(os.path.join(tsukubaImageFd, "imR.png"), cv2.IMREAD_GRAYSCALE)
-    ground_truth = cv2.imread(os.path.join(tsukubaImageFd, "groundtruth.png"), cv2.IMREAD_GRAYSCALE)
-    
-    dispSize=16
-    OCCLUDED = 1<<30
-    GraphCut = helper.GCKZ(left_image, right_image, maxIterations=4, alphaRange=dispSize)
-    disparity_map = GraphCut.compute_disparity_map()
-    
-    occlusion_mask = disparity_map == OCCLUDED
-    print(f"percentage of occlusion: {np.sum(occlusion_mask) / disparity_map.size * 100:.2f}%")
-    # replace occluded pixels with 0
-    disparity_map[occlusion_mask] = 0
-    # flip sign of disparity
-    disparity_map = -1 * disparity_map
-    # min max of disparity
-    print(f"min disparity: {np.min(disparity_map)}; max disparity: {np.max(disparity_map)}")
-    # normalize the disparity map to 8-bit
-    disparity_map_norm = cv2.normalize(disparity_map, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-    # transform the disparity map to color with good separation of colors
-    # disparity_map_norm = cv2.applyColorMap(disparity_map_norm, cv2.COLORMAP_PARULA) 
-    # gray scale just duplicate for 3 channels
-    disparity_map_norm = cv2.merge((disparity_map_norm, disparity_map_norm, disparity_map_norm))
-
-    # replace the occluded pixels with black/cyan, 
-    disparity_map_norm[occlusion_mask] = 255, 255, 0
-    
-    # save the disparity map as png
-    cv2.imwrite(os.path.join(OUTPUT_FOLDER, 'GraphCutDemo_norm.png'), disparity_map_norm)
-    ground_truth_norm = cv2.normalize(ground_truth, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-    # ground_truth_norm = cv2.applyColorMap(ground_truth_norm, cv2.COLORMAP_PLASMA)
-    ground_truth_norm = cv2.merge((ground_truth_norm, ground_truth_norm, ground_truth_norm))
-
-    cv2.imwrite(os.path.join(OUTPUT_FOLDER, 'GraphCutDemo_GroundTruthNorm.png'), ground_truth_norm)
-
-    # ground truth with occlusion
-    ground_truth_norm[occlusion_mask] = 255, 255, 0
-    cv2.imwrite(os.path.join(OUTPUT_FOLDER, 'GraphCutDemo_GroundTruthNormOverlaidOcc.png'), ground_truth_norm) 
-    print('Done: graphcut_method_demo')
     
     
 if __name__ == "__main__":
@@ -200,5 +151,4 @@ if __name__ == "__main__":
     # window_method_demo() # vary window size and print results
     # window_method_results() # Done
     # present_from_another_view_demo()
-    graphcut_method_demo() 
     # graphcut_method_results() #
