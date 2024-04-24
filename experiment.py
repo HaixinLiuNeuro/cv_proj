@@ -141,6 +141,7 @@ def present_from_another_view_demo():
     
     """
 
+    print('Running: present_from_another_view_demo')
     tsukubaImageFd = os.path.join(DATASET_FOLDER, "tsukuba")
 
     left_image = cv2.imread(os.path.join(tsukubaImageFd, "imL.png"), cv2.IMREAD_GRAYSCALE)

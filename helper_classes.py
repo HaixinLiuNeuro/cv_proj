@@ -501,7 +501,7 @@ class GCKZ:
         debug = True # set to True to print the parameters
         if debug:
             # self.K, self.lambda1, self.lambda2, self.denominator = 400, 45, 15, 15
-            self.K, self.lambda1, self.lambda2, self.denominator = 95, 57, 19, 4
+            self.K, self.lambda1, self.lambda2, self.denominator = 200, 150, 50, 4
             #         K=95/4
             #   edgeThreshold=8, lambda1=57/4, lambda2=19/4, dataCost = L2
         else: 
