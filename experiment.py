@@ -120,12 +120,20 @@ def window_method_results():
     # perform statistical analysis for the error results:
     # report the mean and standard deviation of the errors for each evaluation method
     for method in eval_methods:
+        for window_s in window_sizes:
         # calculate mean and standard deviation
-        errors = [error_results[method][scene_name][window_s] for scene_name in Dataset.get_training_scene_list() for window_s in window_sizes]
-        mean_error = np.mean(errors)
-        std_error = np.std(errors)
-        with open(os.path.join(OUTPUT_FOLDER, 'window_method_evaluation_stats.txt'), 'a') as f:
-            f.write(f'{method}: mean error: {mean_error}, std error: {std_error}\n')
+            errors = []
+            for scene_info in Dataset.get_training_scene_list():
+                scene_name=scene_info.scene_name            
+                errors.append(error_results[method][scene_name][window_s])
+            # convert to numpy array
+            errors = np.array(errors)
+            # set inf to nan
+            errors[errors == np.inf] = np.nan
+            mean_error = np.nanmean(errors)
+            std_error = np.nanstd(errors)
+            with open(os.path.join(OUTPUT_FOLDER, 'window_method_evaluation_stats.txt'), 'a') as f:
+                f.write(f'{method}_{window_s}: mean error: {mean_error}, std error: {std_error}\n')
     
 def graphcut_method_results():
     """
@@ -139,8 +147,8 @@ def graphcut_method_results():
 if __name__ == "__main__":
     # test()
     
-    download_data() # Get list of scenes in Milddlebury's stereo training dataset save to local for next steps
+    # download_data() # Get list of scenes in Milddlebury's stereo training dataset save to local for next steps
     # window_method_demo() # vary window size and print results
-    window_method_results() #
+    # window_method_results() # Done
     # present_from_another_view_demo()
     # graphcut_method_results() #
