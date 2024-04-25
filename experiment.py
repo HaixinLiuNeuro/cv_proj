@@ -231,6 +231,6 @@ if __name__ == "__main__":
     # download_data() # Get list of scenes in Milddlebury's stereo training dataset save to local for next steps
     # window_method_demo() # vary window size and print results
     # window_method_results() # Done
-    present_from_another_view_demo()
-    # graphcut_method_demo() 
-    # graphcut_method_results() #
+    # present_from_another_view_demo()
+    graphcut_method_demo() 
+    # graphcut_method_results() # not completed

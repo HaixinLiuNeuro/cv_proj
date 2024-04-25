@@ -19,12 +19,12 @@ right_image = cv2.imread(os.path.join(tsukubaImageFd, "imR.png"), cv2.IMREAD_GRA
 ground_truth = cv2.imread(os.path.join(tsukubaImageFd, "groundtruth.png"), cv2.IMREAD_GRAYSCALE)
 # only use a small part of the image
 
-h = 80
-# w = 240
+h = 60
+w = 120
 x = 0
 y = 120
-imgL = left_image [y:y+h, :]
-imgR = right_image [y:y+h, :]
+imgL = left_image [y:y+h, x:x+w]
+imgR = right_image [y:y+h, x:x+w]
 print('Start running Graph cut')
 dispSize=16
 OCCLUDED = 1<<30
@@ -47,6 +47,7 @@ print('Done')
 # time the graph cut algorithm
 start = cv2.getTickCount()  # start time
 GraphCut = helper.GCKZ(imgL, imgR, maxIterations=4, alphaRange=dispSize)
+# GraphCut = helper.GCKZ(imgR, imgL, maxIterations=4, alphaRange=dispSize)
 disparity_map = GraphCut.compute_disparity_map()
 # disparity will be negative d 
 end = cv2.getTickCount()  # end time
@@ -60,6 +61,7 @@ print(f"percentage of occlusion: {np.sum(occlusion_mask) / disparity_map.size * 
 disparity_map[occlusion_mask] = 0
 # flip sign of disparity
 disparity_map = -1 * disparity_map
+# disparity_map = disparity_map
 # min max of disparity
 print(f"min disparity: {np.min(disparity_map)}; max disparity: {np.max(disparity_map)}")
 # normalize the disparity map to 8-bit

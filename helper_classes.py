@@ -501,9 +501,11 @@ class GCKZ:
         debug = True # set to True to print the parameters
         if debug:
             # self.K, self.lambda1, self.lambda2, self.denominator = 400, 45, 15, 15
-            self.K, self.lambda1, self.lambda2, self.denominator = 200, 150, 50, 4
-            #         K=95/4
-            #   edgeThreshold=8, lambda1=57/4, lambda2=19/4, dataCost = L2
+            # self.K, self.lambda1, self.lambda2, self.denominator = 120, 57, 19, 4
+            self.K, self.lambda1, self.lambda2, self.denominator = 162, 30, 10, 10
+            # K: 125, lambda1: 45, lambda2: 15, denominator: 15 # no square
+            #         K=95/4   edgeThreshold=8, lambda1=57/4, lambda2=19/4, dataCost = L2
+            # K: 1235, lambda1: 741, lambda2: 247, denominator: 9
         else: 
             self.K, self.lambda1, self.lambda2, self.denominator = self.setupParameters()
         # print
@@ -512,6 +514,7 @@ class GCKZ:
         self.energy = 0
         self.disparity_map = np.full((self.left_image.shape), self.occluded, dtype=np.int64)
         # self.disparity_map = np.full((self.left_image.shape), 0, dtype=np.int64)
+        # the initial configuration f has only inactive assignments (all pixels occluded).
         
         # to track modes of associated pixels, node id starts from 0
         self.vars0 = np.full((self.left_image.shape), -10, dtype=np.int64)
@@ -583,7 +586,7 @@ class GCKZ:
         
         disBT_trim = np.min(np.array([CUTOFF, disBT_l2r, disBT_r2l]))
         
-        return disBT_trim ** 2       
+        return disBT_trim # ** 2       
             
     def setupParameters(self):
         """
@@ -650,14 +653,19 @@ class GCKZ:
         # vars0 
         if self.vars0[self.vars0 >= 0].size > 0: # 0 is initial, > 1 is with nodes as node id
             mask = np.zeros(self.vars0.shape, dtype=bool) # for added nodes 
-            mask[self.vars0 >= 0] = vectorized_get_segment(self.vars0[self.vars0 >= 0])
+            mask[self.vars0 >= 0] = vectorized_get_segment(self.vars0[self.vars0 >= 0]) # == 0
             self.disparity_map[mask] = OCCLUDED
             
         # varsA 
         if self.varsA[self.varsA >= 0].size > 0:
             mask = np.zeros(self.varsA.shape, dtype=bool)
-            mask[self.varsA >= 0] = vectorized_get_segment(self.varsA[self.varsA >= 0])
+            mask[self.varsA >= 0] = vectorized_get_segment(self.varsA[self.varsA >= 0]) # == 0
             self.disparity_map[mask] = d
+            # print percentage of pixels gained new disparity
+            print(f"Pixels gained new disparity: {np.sum(mask) / mask.size * 100:.2f}%")
+
+        # print % of occluded pixels
+        print(f"Occluded pixels: {np.sum(self.disparity_map == OCCLUDED) / self.disparity_map.size * 100:.2f}%")
         
     def add_data_occu_terms(self, g, d):
         """
@@ -678,15 +686,15 @@ class GCKZ:
         for p, disp in np.ndenumerate(self.disparity_map):
             # disp = self.disparity_map[p]
             # q = p+d_f(p)
-            is_in_right_image = p[1] + d < self.left_image.shape[1] and p[1] + d >= 0
+            q = (p[0], p[1] + disp)
+            
             is_occluded = disp == self.occluded
             
             if disp == d:
                 # active assignment, assignment remains active, add constaint cost 
                 self.vars0[p] = VAR_ALPHA
                 self.varsA[p] = VAR_ALPHA
-                # get distance and penalty
-                q = (p[0], p[1] + d)
+                # get distance and penalty                
                 disBT_l2r, disBT_r2l = self.disBT(p, q)
                 disBT_trim = self.trim_disBT(disBT_l2r, disBT_r2l)
                 penalty = self.denominator * disBT_trim - self.K
@@ -697,18 +705,18 @@ class GCKZ:
             if not is_occluded:
                 # IMREF(vars0, p) = (d!=OCCLUDED)?  
                 # e.add_variable(data_occlusion_penalty(p,q), 0): VAR_ABSENT;                
-                q = (p[0], p[1] + disp)
+                # q = (p[0], p[1] + disp)
                 disBT_l2r, disBT_r2l = self.disBT(p, q)
                 disBT_trim = self.trim_disBT(disBT_l2r, disBT_r2l)
                 penalty = self.denominator * disBT_trim - self.K
                 node_id = g.add_nodes(1)[0]
-                g.add_tedge(node_id, penalty, 0)
+                g.add_tedge(node_id, penalty, 0) # connect to source
                 self.vars0[p] = node_id # a_
             else:
                 self.vars0[p] = VAR_ABSENT
                 
             q = (p[0], p[1] + d) # q = p+alpha    
-            is_in_right_image = q[1] < self.left_image.shape[1] and q[1] >= 0 # also update
+            is_in_right_image = q[1] < self.right_image.shape[1] and q[1] >= 0 # also update
             if is_in_right_image:
                 # IMREF(varsA, p) = inRect(q,imSizeR)? 
                 # e.add_variable(0, data_occlusion_penalty(p,q)): VAR_ABSENT;
@@ -716,7 +724,7 @@ class GCKZ:
                 disBT_trim = self.trim_disBT(disBT_l2r, disBT_r2l)
                 penalty = self.denominator * disBT_trim - self.K
                 node_id = g.add_nodes(1)[0]
-                g.add_tedge(node_id, 0, penalty)
+                g.add_tedge(node_id, 0, penalty) # connect to sink
                 self.varsA[p] = node_id # a_
             else:
                 self.varsA[p] = VAR_ABSENT
@@ -818,7 +826,7 @@ class GCKZ:
         
             for i in range(2):
                 # q2 = (q[0] + i, q[1] + i - 1)
-                p2 = (p1[0] + i, p1[1] + i - 1)
+                p2 = (p1[0] - 1 + i, p1[1] + i )
                 is_p2_in_image = p2[1] < self.left_image.shape[1] and \
                     p2[0] < self.left_image.shape[0] and p2[0] >= 0 and p2[1] >= 0
                 if not is_p2_in_image:
@@ -885,14 +893,14 @@ class GCKZ:
                 # disparity d1, a!=d1!=d2, (p2, p2+d1) inactive neighbor assignment
                 # (d1!=d2 && IS_VAR(o1) && inRect(p2+d1,imSizeR))
                 if d_f_p1 != d_f_p2 and vars01 >= 0 and \
-                    p2[1] + d_f_p1 < self.left_image.shape[1] and p1[1] + d_f_p1 < self.left_image.shape[1]:                    
+                    p2[1] + d_f_p1 < self.left_image.shape[1] and p2[1]+ d_f_p1 >=0:                    
                     weight = self.dist_dispairty(p1, p2, d_f_p1)
                     g.add_tedge(vars01, weight, 0)
 
                 # disparity d2, a!=d2!=d1, (p1,p1+d2) inactive neighbor assignment     
                 # (d2!=d1 && IS_VAR(o2) && inRect(p1+d2,imSizeR))                   
                 if d_f_p1 != d_f_p2 and vars02 >= 0 and \
-                    p1[1] + d_f_p2 < self.left_image.shape[1]:
+                    p1[1] + d_f_p2 < self.right_image.shape[1] and p1[1]+ d_f_p2 >=0:
                     weight = self.dist_dispairty(p1, p2, d_f_p2)
                     g.add_tedge(vars02, weight, 0)    
                         
@@ -934,31 +942,32 @@ class GCKZ:
         
         for p, disp in np.ndenumerate(self.disparity_map):
             # disp = self.disparity_map[p]
-            # q = (p[0], p[1] + disp)
+            q = (p[0], p[1] + disp) # disp != alpha
             
             var0 = self.vars0[p]
-            if var0 < 0: # !is_var
+            if var0 < 0: # not is_var
                 continue
             
             varA = self.varsA[p] # retrive the node id
             # unique image of p    
             if varA != VAR_ABSENT:
                 # add forbidden edge
-                self.add_edge_forbid01(g, var0, varA, OCCLUDED)
+                self.add_edge_forbid01(g, var0, varA)
             
             # Enforce unique antecedent of p+d_f(p) 
             # assert(d!=OCCLUDED);
             assert disp != OCCLUDED, "Assertion error: disp should not be equal to OCCLUDED"
-            p2 = (p[0], p[1] + disp - alpha)
+            p2 = (p[0], p[1] + disp - alpha) # q+d, with d=d_right(q), d_right(q) = -disp
             if p2[1] < self.left_image.shape[1] and p2[1] >= 0:
                 # inRect(p2,imSizeL)
+                # var0 = self.vars0[p2] # ???
                 varA = self.varsA[p2]
                 assert varA >= 0, "Assertion error: varA should not be a node"
                 # not active because of current uniqueness
                 # add forbidden edge
-                self.add_edge_forbid01(g, var0, varA, OCCLUDED)
+                self.add_edge_forbid01(g, var0, varA)
                     
-    def add_edge_forbid01(self, g, n1, n2, OCCLUDED):
+    def add_edge_forbid01(self, g, n1, n2):
         """
         add forbidden edge between two nodes
         
@@ -1002,26 +1011,26 @@ class GCKZ:
                     # construct a graph for each
                     g = maxflow.Graph[int](2 * self.left_image.size, 12 * self.left_image.size) 
                     # each pixel has two nodes and 12 edges
-                    
-                    self.add_data_occu_terms(g, -d)
-                    self.add_smooth_terms(g, -d)
-                    self.add_unique_terms(g, -d)
-                    
-                    new_energy = g.maxflow() + self.activePenalty
-                    print(f"disparity: {-d}; new energy: {new_energy}; active penalty: {self.activePenalty}")
+                    alpha = -d
+                    self.add_data_occu_terms(g, alpha)
+                    self.add_smooth_terms(g, alpha)
+                    self.add_unique_terms(g, alpha)
+                    mincut = g.maxflow()
+                    new_energy = mincut + self.activePenalty
+                    print(f"disparity: {alpha}; new energy: {new_energy}; active penalty: {self.activePenalty}; mincut: {mincut}")
                     if new_energy < self.energy:
                         self.energy = new_energy
                         # update disparity map
-                        print(f"new energy: {new_energy}; update disparity map: {-d}")
-                        self.update_disparity_map(g, -d)
+                        print(f"new energy: {new_energy}; update disparity map: {alpha}")
+                        self.update_disparity_map(g, alpha)
                         done[:] = False # reset
                         print(f"reset")
                     done[d] = True
                     
-            # exit
-            if np.all(done):
-                print(f"all done")
-                return self.disparity_map
+                    # exit
+                    if np.all(done):
+                        print(f"all done")
+                        return self.disparity_map
         # finished loops        
         return self.disparity_map
     
